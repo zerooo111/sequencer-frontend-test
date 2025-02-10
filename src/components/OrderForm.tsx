@@ -3,49 +3,18 @@ import { useEffect, useState } from "react";
 import { PublicKey } from "@solana/web3.js";
 import axios, { AxiosError } from "axios";
 
-/**
- * @description Creates the exact same message format as backend for signing
- * @param orderIntent The order intent to be signed
- */
-const createSigningMessage = (orderIntent: OrderIntentFields): Uint8Array => {
-  // Match the backend's SIGNED_ORDER_PREFIX
-  const prefix = new TextEncoder().encode("FRM_DEX_ORDER:");
-
-  // Create the message in the same format as backend
-  const message = JSON.stringify({
-    order_id: orderIntent.order_id,
-    owner: orderIntent.owner, // Convert PublicKey to byte array
-    side: orderIntent.side === "Buy" ? { buy: {} } : { sell: {} }, // Convert to boolean as expected by backend
-    price: orderIntent.price,
-    quantity: orderIntent.quantity,
-    expiry: orderIntent.expiry,
-  });
-
-  // Concatenate prefix and message
-  const messageBytes = new TextEncoder().encode(message);
-  const fullMessage = new Uint8Array(prefix.length + messageBytes.length);
-  fullMessage.set(prefix);
-  fullMessage.set(messageBytes, prefix.length);
-
-  return fullMessage;
-};
+enum Side {
+  Buy = "Buy",
+  Sell = "Sell",
+}
 
 type OrderIntentFields = {
   order_id: number;
-  owner: PublicKey;
-  side: "Buy" | "Sell";
+  owner: number[];
+  side: Side;
   price: number;
   quantity: number;
   expiry: number;
-};
-
-const defaultOrderIntent: OrderIntentFields = {
-  order_id: 1,
-  owner: PublicKey.default,
-  side: "Buy",
-  price: 100,
-  quantity: 500,
-  expiry: Date.now() + 1000 * 60 * 60 * 24,
 };
 
 const OrderForm = () => {
@@ -61,7 +30,7 @@ const OrderForm = () => {
 
   useEffect(() => {
     if (publicKey) {
-      setOrderIntent({ ...defaultOrderIntent, owner: publicKey });
+      setOrderIntent(null);
     }
   }, [publicKey]);
 
@@ -69,9 +38,7 @@ const OrderForm = () => {
    * @description Reset all states to their initial values
    */
   const handleClearData = () => {
-    setOrderIntent(
-      publicKey ? { ...defaultOrderIntent, owner: publicKey } : null
-    );
+    setOrderIntent(null);
     setSignature(null);
     setMessageSigned(null);
     setBodySent(null);
@@ -79,16 +46,38 @@ const OrderForm = () => {
     setResponse(null);
   };
 
+  const convertPublicKeyToBuffer = (publicKey: PublicKey) => {
+    return publicKey.toBuffer().toJSON().data;
+  };
+
   const handleSign = async () => {
     try {
-      if (!publicKey || !signMessage || !orderIntent) {
+      if (!publicKey || !signMessage) {
         throw new Error("Wallet not connected or order intent not initialized");
       }
 
-      // Create message to sign using the same format as backend
-      const message = createSigningMessage(orderIntent);
-      setMessageSigned(new TextDecoder().decode(message));
-      const signatureBytes = await signMessage(message);
+      // Create message to sign using the same format as <backend>
+
+      const orderIntent = {
+        order_id: 1,
+        owner: convertPublicKeyToBuffer(publicKey),
+        side: Side.Buy,
+        price: 100,
+        quantity: 500,
+        expiry: 1770595200,
+      };
+      setOrderIntent(orderIntent as OrderIntentFields);
+
+      const message = new TextEncoder().encode(JSON.stringify(orderIntent));
+      const prefix = new TextEncoder().encode("FRM_DEX_ORDER:");
+      const fullMessage = new Uint8Array(prefix.length + message.length);
+
+      fullMessage.set(prefix);
+      fullMessage.set(message, prefix.length);
+
+      setMessageSigned(new TextDecoder().decode(fullMessage));
+
+      const signatureBytes = await signMessage(fullMessage);
 
       // Convert signature to hex string as expected by backend
       const hexSignature = Buffer.from(signatureBytes).toString("hex");
@@ -106,14 +95,7 @@ const OrderForm = () => {
       }
 
       const bodySent = {
-        intent: {
-          order_id: orderIntent.order_id,
-          owner: orderIntent.owner.toBuffer().toJSON().data,
-          side: orderIntent.side,
-          price: orderIntent.price,
-          quantity: orderIntent.quantity,
-          expiry: orderIntent.expiry,
-        },
+        intent: orderIntent,
         signature: signature,
       };
 
