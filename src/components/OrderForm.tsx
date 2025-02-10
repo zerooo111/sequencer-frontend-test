@@ -8,20 +8,10 @@ enum Side {
   Sell = "Sell",
 }
 
-type OrderIntentFields = {
-  order_id: number;
-  owner: number[];
-  side: Side;
-  price: number;
-  quantity: number;
-  expiry: number;
-};
 
 const OrderForm = () => {
   const { publicKey, signMessage } = useWallet();
-  const [orderIntent, setOrderIntent] = useState<OrderIntentFields | null>(
-    null
-  );
+  const [orderIntent, setOrderIntent] = useState<object | null>(null);
   const [signature, setSignature] = useState<string | null>(null);
   const [messageSigned, setMessageSigned] = useState<string | null>(null);
   const [bodySent, setBodySent] = useState<string | null>(null);
@@ -59,16 +49,18 @@ const OrderForm = () => {
       // Create message to sign using the same format as <backend>
 
       const orderIntent = {
-        order_id: 1,
-        owner: convertPublicKeyToBuffer(publicKey),
-        side: Side.Buy,
         price: 100,
         quantity: 500,
+        order_id: 1,
+        side: Side.Buy,
+        owner: publicKey.toBase58(),
         expiry: 1770595200,
       };
-      setOrderIntent(orderIntent as OrderIntentFields);
+      setOrderIntent(orderIntent);
 
-      const message = new TextEncoder().encode(JSON.stringify(orderIntent));
+      const message = new TextEncoder().encode(
+        JSON.stringify(orderIntent, null, 2)
+      );
       const prefix = new TextEncoder().encode("FRM_DEX_ORDER:");
       const fullMessage = new Uint8Array(prefix.length + message.length);
 
